@@ -1,0 +1,35 @@
+{
+  "note": "TODAS las escenas demo son SINTÉTICAS; no son productos satelitales reales.",
+  "scenes": [
+    {
+      "id": "demo_2026_01_08",
+      "file": "demo_2026_01_08.tif",
+      "date": "2026-01-08",
+      "source": "DEMO_SINTETICA",
+      "channel": "HHHH",
+      "units": "linear_power",
+      "is_demo": true,
+      "description": "Datos fabricados solo para validar la aplicación. No representan NISAR."
+    },
+    {
+      "id": "demo_2026_03_02",
+      "file": "demo_2026_03_02.tif",
+      "date": "2026-03-02",
+      "source": "DEMO_SINTETICA",
+      "channel": "HHHH",
+      "units": "linear_power",
+      "is_demo": true,
+      "description": "Datos fabricados solo para validar la aplicación. No representan NISAR."
+    },
+    {
+      "id": "demo_2026_06_10",
+      "file": "demo_2026_06_10.tif",
+      "date": "2026-06-10",
+      "source": "DEMO_SINTETICA",
+      "channel": "HHHH",
+      "units": "linear_power",
+      "is_demo": true,
+      "description": "Datos fabricados solo para validar la aplicación. No representan NISAR."
+    }
+  ]
+}
