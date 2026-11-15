@@ -28,6 +28,8 @@ from rasterio.transform import from_bounds
 from rasterio.warp import reproject, transform_bounds
 
 from backend.api.trends import router as trends_router
+from backend.api.tif_lab import router as tif_lab_router
+from backend.api.geospatial import router as geospatial_router
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / 'data' / 'manifest.json'
@@ -39,6 +41,8 @@ MAX_CELLS = 1_000_000    # evitar que una solicitud consuma demasiada memoria
 app = FastAPI(title='AndesSAR Local API', version='0.1.0',
               description='Comparación dinámica exploratoria SAR por fechas y área.')
 app.include_router(trends_router)
+app.include_router(tif_lab_router)
+app.include_router(geospatial_router)
 
 
 class AnalysisRequest(BaseModel):

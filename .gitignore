@@ -4,5 +4,17 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 *.pyc
+.env
+runtime/
 # Observaciones satelitales grandes; no publicar sin revisar licencias/privacidad.
 data/raw/
+# Local raster directories
+02_2021/
+Ecu Cp/
+Ecu Cp 2023_2026/
+Ecu Cp 2021_2023/
+# Local raster directories
+02_2021/
+Ecu Cp/
+Ecu Cp 2023_2026/
+Ecu Cp 2021_2023/

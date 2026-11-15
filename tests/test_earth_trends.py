@@ -87,3 +87,60 @@ def test_precipitation_rate_is_converted_to_actual_days_before_annual_sum():
     assert unit == 'mm/año'
     assert annual[0]['value'] == sum(monthrange(2020, month)[1] for month in range(1, 13))
     assert annual[1]['value'] == 365
+
+
+def test_local_tif_lab_inspects_and_compares_only_compatible_grids():
+    catalog = client.get('/api/tif-lab/catalog')
+    assert catalog.status_code == 200
+    items = catalog.json()['items']
+    assert len(items) >= 32
+    before = next(item for item in items if item['layer'] == 'LC_Type5' and item['year'] == 2021)
+    after = next(item for item in items if item['layer'] == 'LC_Type5' and item['year'] == 2025)
+
+    inspection = client.get(f"/api/tif-lab/inspect/{before['id']}")
+    assert inspection.status_code == 200
+    assert inspection.json()['epsg'] == 4326
+    assert inspection.json()['valid_pixels'] > 0
+    preview = client.get(f"/api/tif-lab/preview/{before['id']}")
+    assert preview.status_code == 200
+    assert preview.headers['content-type'].startswith('image/png')
+
+    comparison = client.post('/api/tif-lab/compare', json={
+        'before_id': before['id'], 'after_id': after['id'],
+    })
+    assert comparison.status_code == 200, comparison.text
+    payload = comparison.json()
+    assert payload['statistics']['valid_pixels'] > 0
+    assert payload['method']['resampling'] == 'ninguno; comparación directa de la grilla original'
+    assert client.get(payload['comparison_preview_url']).headers['content-type'].startswith('image/png')
+
+
+def test_local_tif_lab_includes_the_prepared_ecu_cp_series():
+    items = client.get('/api/tif-lab/catalog').json()['items']
+    prepared = [item for item in items if item['collection'] == 'Ecu Cp']
+    assert [item['year'] for item in prepared] == [2021, 2022, 2023, 2024, 2025]
+    assert {item['layer'] for item in prepared} == {'Ecu Cp preparado'}
+    response = client.post('/api/tif-lab/compare', json={
+        'before_id': prepared[0]['id'], 'after_id': prepared[-1]['id'],
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()['statistics']['valid_pixels'] == 1_205_368
+
+
+def test_local_tif_lab_lists_unverified_02_2021_without_inventing_band_semantics():
+    items = client.get('/api/tif-lab/catalog').json()['items']
+    asset = next(item for item in items if item['collection'] == '02_2021' and item['file_name'] == 'Zona Norte 2021.tiff')
+    assert asset['kind'] == 'unverified_raster'
+    inspection = client.get(f"/api/tif-lab/inspect/{asset['id']}")
+    assert inspection.status_code == 200
+    assert inspection.json()['band_count'] == 6
+    assert inspection.json()['histogram'] == []
+    assert inspection.json()['interpretation'].startswith('NO VERIFICADO')
+
+
+def test_geoportal_reports_configuration_without_leaking_a_connection_string():
+    response = client.get('/api/geospatial/status')
+    assert response.status_code == 200
+    payload = response.json()
+    assert {'ready', 'max_upload_bytes', 'chunk_bytes', 'upload_protection'} <= payload.keys()
+    assert 'database_url' not in payload

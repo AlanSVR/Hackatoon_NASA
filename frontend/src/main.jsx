@@ -7,10 +7,14 @@ import { ControlPanel } from './components/filters/ControlPanel'
 import { TrendMap } from './components/map/TrendMap'
 import { ResultsPanel } from './components/results/ResultsPanel'
 import { SarExperiment } from './components/SarExperiment'
+import { Geoportal } from './components/Geoportal'
+import { TifLab } from './components/TifLab'
 import { INITIAL_FILTERS } from './config/map'
 import { api } from './services/api'
+import { I18nProvider, useI18n } from './i18n'
 
 function App() {
+  const { t, dynamic } = useI18n()
   const [view, setView] = useState('trends')
   const [filters, setFilters] = useState(INITIAL_FILTERS)
   const [catalog, setCatalog] = useState({ countries: [], regions: [], variables: [] })
@@ -43,7 +47,7 @@ function App() {
       if (filters.start_year <= 2001 && filters.end_year >= 2020) requests.push(api.post('/anomalies', { ...payload, baseline_start_year: 2001, baseline_end_year: 2020 }))
       const settled = await Promise.all(requests)
       setComparison(settled[0]); setAnomaly(settled[1] || null)
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
+    } catch (err) { setError(dynamic(err.message)) } finally { setBusy(false) }
   }
 
   function reset() { setFilters(INITIAL_FILTERS); setGeometry(null); setResult(null); setAnomaly(null); setComparison(null); setError('') }
@@ -51,10 +55,10 @@ function App() {
 
   return <>
     <AppHeader view={view} onViewChange={setView} backendOk={backendOk} onAbout={() => setAbout(true)}/>
-    {view === 'sar' ? <SarExperiment/> : <main className="trends-workspace">
+    {view === 'sar' ? <SarExperiment/> : view === 'geoportal' ? <Geoportal/> : <main className="trends-workspace">
       <ControlPanel filters={filters} countries={catalog.countries} regions={catalog.regions} variables={catalog.variables} busy={busy} selection={geometry} onChange={next => { setFilters(next); if (next.country_id !== filters.country_id || next.region_id !== filters.region_id) setGeometry(null) }} onRun={runAnalysis} onReset={reset}/>
       <section className="analysis-canvas">
-        {error && <div className="error-banner" role="alert"><b>No se pudo completar el análisis.</b><span>{error}</span></div>}
+        {error && <div className="error-banner" role="alert"><b>{t('trends.errorTitle')}</b><span>{error}</span></div>}
         <TrendMap country={country} region={region} filters={filters} geometry={geometry} onGeometry={setGeometry} onClearGeometry={() => setGeometry(null)} hasData={Boolean(result)}/>
         <ResultsPanel result={result} anomaly={anomaly} comparison={comparison} onDownload={download}/>
       </section>
@@ -63,4 +67,5 @@ function App() {
   </>
 }
 
-createRoot(document.getElementById('root')).render(<App />)
+const isTifLab = /^\/laboratorio-tif\/?$/.test(window.location.pathname)
+createRoot(document.getElementById('root')).render(<I18nProvider>{isTifLab ? <TifLab/> : <App />}</I18nProvider>)

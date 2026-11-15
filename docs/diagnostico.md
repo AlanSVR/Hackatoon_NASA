@@ -22,7 +22,7 @@ El análisis SAR existente es real respecto de esos archivos: reproyecta ambas e
 | Rasterio puede heredar rutas PROJ incompatibles de PostgreSQL/PostGIS en Windows. | La API elimina `PROJ_DATA` y `PROJ_LIB` solo en su proceso, antes de importar Rasterio. No modifica Windows ni PostgreSQL. |
 | No había un cliente científico remoto ni estadística de tendencia. | Se añadió el adaptador NASA POWER y un módulo estadístico separado. |
 | No estaba instalado SciPy. | Se declara como dependencia científica para regresión, valor p e intervalo de confianza. |
-| No se encontró `docs/Requsitos.pdf` ni otro PDF en este paquete. | `docs/especificacion.md` marca esa fuente como pendiente y no afirma haberla leído. |
+| El PDF de requisitos se entregó fuera del repositorio el 14 de noviembre de 2026. | Se revisó y se incorporó en `docs/especificacion.md`; clasificación espacial y animación continúan pendientes de datos reales. |
 
 ## Compatibilidad comprobada
 
