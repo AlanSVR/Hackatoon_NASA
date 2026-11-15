@@ -35,10 +35,10 @@ def fake_power_series(*, parameter, latitude, longitude, start_year, end_year):
 def test_catalog_endpoints_are_explicit():
     countries = client.get('/api/countries')
     assert countries.status_code == 200
-    assert {item['id'] for item in countries.json()} == {'ecuador', 'united_states', 'canada'}
-    regions = client.get('/api/regions?country_id=canada')
+    assert {item['id'] for item in countries.json()} == {'ecuador'}
+    regions = client.get('/api/regions?country_id=ecuador')
     assert regions.status_code == 200
-    assert len(regions.json()) == 2
+    assert regions.json() == []
     variables = client.get('/api/variables')
     assert any(item['parameter'] == 'T2M' for item in variables.json())
 
@@ -47,25 +47,27 @@ def test_trend_anomaly_comparison_and_exports(monkeypatch):
     monkeypatch.setattr('backend.services.timeseries.provider.fetch_monthly', fake_power_series)
     series_cache._items.clear()
     request = {
-        'country_id': 'ecuador', 'region_id': 'riobamba_chimborazo',
-        'variable_id': 't2m', 'start_year': 2010, 'end_year': 2019,
+        'country_id': 'ecuador', 'latitude': -1.8312, 'longitude': -78.1834,
+        'variable_id': 't2m', 'start_year': 2021, 'end_year': 2026,
     }
     trend = client.post('/api/trends', json=request)
     assert trend.status_code == 200, trend.text
     payload = trend.json()
-    assert payload['series']['quality']['valid_observations'] == 120
-    assert payload['trend']['n_annual_observations'] == 10
-    assert payload['trend']['is_significant'] is True
+    assert payload['series']['quality']['valid_observations'] == 72
+    assert payload['trend']['n_annual_observations'] == 6
+    # The configured 2021–2026 window contains six annual aggregates; the
+    # analysis correctly withholds a significance claim for that short series.
+    assert payload['trend']['is_significant'] is None
     assert payload['trend']['slope_per_year'] > 0
-    assert payload['trend']['confidence_interval_95'][0] > 0
+    assert payload['trend']['confidence_interval_95'] is None
 
     anomalies = client.post('/api/anomalies', json={
-        **request, 'baseline_start_year': 2010, 'baseline_end_year': 2019,
+        **request, 'baseline_start_year': 2021, 'baseline_end_year': 2026,
     })
     assert anomalies.status_code == 200, anomalies.text
-    assert len(anomalies.json()['anomalies']['observations']) == 120
+    assert len(anomalies.json()['anomalies']['observations']) == 72
 
-    comparison = client.post('/api/compare', json={**request, 'year_a': 2010, 'year_b': 2019})
+    comparison = client.post('/api/compare', json={**request, 'year_a': 2021, 'year_b': 2026})
     assert comparison.status_code == 200, comparison.text
     assert comparison.json()['comparison']['difference'] > 0
     export_id = payload['export_id']

@@ -10,11 +10,8 @@ runtime/
 data/raw/
 # Local raster directories
 02_2021/
+03_2023/
+03_2022/
 Ecu Cp/
 Ecu Cp 2023_2026/
-Ecu Cp 2021_2023/
-# Local raster directories
-02_2021/
-Ecu Cp/
-Ecu Cp 2023_2026/
-Ecu Cp 2021_2023/
+Ecu Cp 2021_2023/git add .

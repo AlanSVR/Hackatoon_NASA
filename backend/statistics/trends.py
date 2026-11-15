@@ -10,6 +10,7 @@ from scipy import stats
 
 MIN_MONTHS_FOR_MEAN_YEAR = 9
 MIN_YEARS_FOR_TREND = 8
+MIN_YEARS_FOR_DESCRIPTIVE_SLOPE = 3
 
 
 def _date(raw: str) -> date:
@@ -82,10 +83,10 @@ def calculate_trend(observations: list[dict], variable: dict) -> dict[str, Any]:
             'Una asociación temporal no demuestra causalidad.',
         ],
     }
-    if len(valid) < MIN_YEARS_FOR_TREND:
+    if len(valid) < MIN_YEARS_FOR_DESCRIPTIVE_SLOPE:
         result.update({
             'status': 'insufficient_data', 'is_significant': None,
-            'message': f'Se requieren al menos {MIN_YEARS_FOR_TREND} años agregados válidos; se obtuvieron {len(valid)}.',
+            'message': f'Se requieren al menos {MIN_YEARS_FOR_DESCRIPTIVE_SLOPE} años agregados válidos; se obtuvieron {len(valid)}.',
             'slope_per_year': None, 'p_value': None, 'confidence_interval_95': None,
             'estimated_change': None,
         })
@@ -94,6 +95,20 @@ def calculate_trend(observations: list[dict], variable: dict) -> dict[str, Any]:
     x = [item['year'] for item in valid]
     y = [item['value'] for item in valid]
     regression = stats.linregress(x, y)
+    if len(valid) < MIN_YEARS_FOR_TREND:
+        result.update({
+            'status': 'exploratory_short_series', 'is_significant': None,
+            'slope_per_year': round(float(regression.slope), 6),
+            'slope_unit': f'{annual_unit}/año',
+            'p_value': None, 'confidence_interval_95': None,
+            'estimated_change': round(float(regression.slope * (max(x) - min(x))), 6),
+            'estimated_change_unit': annual_unit,
+            'message': (
+                f'Serie corta: se muestran pendiente y cambio descriptivos con {len(valid)} años agregados; '
+                f'no se emite una conclusión de significancia (mínimo {MIN_YEARS_FOR_TREND} años).'
+            ),
+        })
+        return result
     degrees_of_freedom = len(valid) - 2
     critical = stats.t.ppf(0.975, degrees_of_freedom)
     margin = critical * regression.stderr

@@ -26,6 +26,17 @@ from pydantic import BaseModel, Field, field_validator
 from rasterio.warp import transform_bounds
 
 from backend.geospatial.catalog import CatalogUnavailable, PostgresCatalog
+from backend.geospatial.landcover import (
+    MCD12Q1_LC_TYPE1_PROFILE,
+    categorical_png,
+    class_at as landcover_class_at,
+    compare as compare_landcover,
+    is_declared_igbp,
+    legend as landcover_legend,
+    summary as landcover_summary,
+    summary_for_bbox,
+    summary_for_geometries,
+)
 from backend.geospatial.processing import render_normalized_difference, render_rgb
 from backend.geospatial.settings import GeoportalSettings
 
@@ -81,6 +92,51 @@ class NormalizedDifferenceRequest(BaseModel):
     numerator_band: int = Field(ge=1)
     denominator_band: int = Field(ge=1)
     manual_semantics_confirmed: bool = False
+
+
+class AssetMetadataRequest(BaseModel):
+    """Human-authored context; never overwrites inspected raster metadata."""
+    map_title: str | None = Field(default=None, max_length=160)
+    source_note: str | None = Field(default=None, max_length=1200)
+    source_url: str | None = Field(default=None, max_length=500)
+
+
+class LandCoverAreaRequest(BaseModel):
+    bbox: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    area_ids: list[str] = Field(default_factory=list, max_length=24)
+
+    @field_validator('area_ids')
+    @classmethod
+    def valid_area_ids(cls, value: list[str]) -> list[str]:
+        if any(not item.isdigit() or len(item) > 2 for item in value):
+            raise ValueError('Los identificadores provinciales no son válidos.')
+        return list(dict.fromkeys(value))
+
+    @field_validator('bbox')
+    @classmethod
+    def valid_bbox(cls, value: list[float] | None) -> list[float] | None:
+        return [float(item) for item in value] if value is not None else None
+
+    def model_post_init(self, __context: Any) -> None:
+        if bool(self.bbox) == bool(self.area_ids):
+            raise ValueError('Selecciona una extensión manual o al menos una provincia.')
+
+
+class LandCoverComparisonRequest(BaseModel):
+    after_asset_id: uuid.UUID
+    bbox: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    area_ids: list[str] = Field(default_factory=list, max_length=24)
+
+    @field_validator('area_ids')
+    @classmethod
+    def valid_comparison_area_ids(cls, value: list[str]) -> list[str]:
+        if any(not item.isdigit() or len(item) > 2 for item in value):
+            raise ValueError('Los identificadores provinciales no son válidos.')
+        return list(dict.fromkeys(value))
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.bbox and self.area_ids:
+            raise ValueError('Selecciona una extensión manual o provincias, no ambas a la vez.')
 
 
 def _extension(file_name: str) -> str:
@@ -330,6 +386,54 @@ def _asset_or_error(asset_id: uuid.UUID) -> dict[str, Any]:
     return asset
 
 
+def _igbp_asset_or_error(asset_id: uuid.UUID) -> dict[str, Any]:
+    asset = _asset_or_error(asset_id)
+    if not is_declared_igbp(asset):
+        raise HTTPException(
+            422,
+            'El activo no está declarado como MCD12Q1.061 LC_Type1 (IGBP); no se asignan clases de cobertura automáticamente.',
+        )
+    return asset
+
+
+def _cached_landcover_summary(
+    asset: dict[str, Any],
+    bbox: list[float] | None = None,
+    area_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    repository = _catalog_or_error()
+    selected_ids = area_ids or []
+    parameters = {'profile': MCD12Q1_LC_TYPE1_PROFILE, 'bbox': bbox, 'area_ids': selected_ids}
+    cache_key = _analysis_cache_key([str(asset['sha256'])], 'igbp-summary', parameters)
+    cached = repository.get_persistent_cache(cache_key)
+    if cached:
+        return {**dict(cached['payload']), 'cached': True}
+    source = _storage_path(asset['storage_key'])
+    try:
+        areas = repository.administrative_geometries(selected_ids) if selected_ids else []
+        statistics = (
+            summary_for_geometries(source, [item['geometry'] for item in areas]) if areas
+            else summary_for_bbox(source, bbox) if bbox else landcover_summary(source)
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    payload = {
+        'asset_id': str(asset['asset_id']), 'profile': MCD12Q1_LC_TYPE1_PROFILE,
+        'statistics': statistics, 'legend': landcover_legend(),
+        'selection': {
+            'type': 'provinces' if selected_ids else 'bbox' if bbox else 'full-raster',
+            'area_ids': selected_ids,
+            'areas': [{'area_id': item['area_id'], 'name_es': item['name_es'], 'name_en': item['name_en']} for item in areas],
+        },
+    }
+    repository.put_persistent_cache(cache_key, 'geospatial:igbp-summary', payload)
+    repository.record_processing_job({
+        'job_id': str(uuid.uuid4()), 'job_type': 'igbp-summary', 'input_fingerprint': str(asset['sha256']),
+        'parameters': parameters, 'cache_key': cache_key, 'result_summary': statistics,
+    })
+    return {**payload, 'cached': False}
+
+
 @router.get('/status')
 def geospatial_status() -> dict[str, Any]:
     response: dict[str, Any] = {
@@ -355,6 +459,14 @@ def list_assets(limit: int = 100) -> dict[str, Any]:
         raise HTTPException(422, 'limit debe estar entre 1 y 250.')
     try:
         return {'items': _catalog_or_error().list_assets(limit)}
+    except CatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.get('/admin-areas')
+def list_administrative_areas(level: Literal['province'] = 'province') -> dict[str, Any]:
+    try:
+        return _catalog_or_error().list_administrative_areas(level)
     except CatalogUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
 
@@ -387,6 +499,104 @@ def analysis_capabilities(asset_id: uuid.UUID) -> dict[str, Any]:
         'mask_classes': 'unverified',
         'note': 'Las bandas pueden seleccionarse para una visualización técnica. Los índices científicos requieren roles de banda verificados o confirmación manual explícita.',
     }
+
+
+@router.patch('/assets/{asset_id}/metadata')
+def update_asset_metadata(asset_id: uuid.UUID, payload: AssetMetadataRequest) -> dict[str, Any]:
+    """Save map title and source notes supplied by the catalog editor."""
+    _asset_or_error(asset_id)
+    values = payload.model_dump(exclude_none=True)
+    if not values:
+        raise HTTPException(422, 'Indica al menos un campo de contexto para actualizar.')
+    try:
+        updated = _catalog_or_error().update_declared_metadata(asset_id, values)
+    except CatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, 'Activo no encontrado.')
+    return updated
+
+
+@router.get('/assets/{asset_id}/land-cover')
+def land_cover_summary(asset_id: uuid.UUID) -> dict[str, Any]:
+    return _cached_landcover_summary(_igbp_asset_or_error(asset_id))
+
+
+@router.post('/assets/{asset_id}/land-cover/area')
+def land_cover_area(asset_id: uuid.UUID, payload: LandCoverAreaRequest) -> dict[str, Any]:
+    return _cached_landcover_summary(_igbp_asset_or_error(asset_id), payload.bbox, payload.area_ids)
+
+
+@router.get('/assets/{asset_id}/land-cover/class-at')
+def land_cover_class_at(asset_id: uuid.UUID, longitude: float, latitude: float) -> dict[str, Any]:
+    asset = _igbp_asset_or_error(asset_id)
+    try:
+        return {
+            'asset_id': str(asset_id), 'profile': MCD12Q1_LC_TYPE1_PROFILE,
+            'sample': landcover_class_at(_storage_path(asset['storage_key']), longitude, latitude),
+        }
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post('/assets/{asset_id}/land-cover/compare')
+def land_cover_compare(asset_id: uuid.UUID, payload: LandCoverComparisonRequest) -> dict[str, Any]:
+    before = _igbp_asset_or_error(asset_id)
+    after = _igbp_asset_or_error(payload.after_asset_id)
+    if str(before['asset_id']) == str(after['asset_id']):
+        raise HTTPException(422, 'Selecciona dos años diferentes para comparar.')
+    repository = _catalog_or_error()
+    try:
+        areas = repository.administrative_geometries(payload.area_ids) if payload.area_ids else []
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    parameters = {
+        'before_asset_id': str(before['asset_id']), 'after_asset_id': str(after['asset_id']),
+        'bbox': payload.bbox, 'area_ids': payload.area_ids,
+    }
+    cache_key = _analysis_cache_key([str(before['sha256']), str(after['sha256'])], 'igbp-compare', parameters)
+    cached = repository.get_persistent_cache(cache_key)
+    if cached:
+        return {**dict(cached['payload']), 'cached': True}
+    try:
+        result = compare_landcover(
+            _storage_path(before['storage_key']), _storage_path(after['storage_key']), payload.bbox,
+            [item['geometry'] for item in areas] or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    response = {
+        'before_asset_id': str(before['asset_id']), 'after_asset_id': str(after['asset_id']),
+        'profile': MCD12Q1_LC_TYPE1_PROFILE, 'comparison': result,
+        'selection': {
+            'type': 'provinces' if payload.area_ids else 'bbox' if payload.bbox else 'full-raster',
+            'area_ids': payload.area_ids,
+            'areas': [{'area_id': item['area_id'], 'name_es': item['name_es'], 'name_en': item['name_en']} for item in areas],
+        },
+    }
+    repository.put_persistent_cache(cache_key, 'geospatial:igbp-compare', response)
+    repository.record_processing_job({
+        'job_id': str(uuid.uuid4()), 'job_type': 'igbp-compare',
+        'input_fingerprint': _analysis_cache_key([str(before['sha256']), str(after['sha256'])], 'igbp-input', {}),
+        'parameters': parameters, 'cache_key': cache_key, 'result_summary': result,
+    })
+    return {**response, 'cached': False}
+
+
+@router.get('/assets/{asset_id}/land-cover/preview')
+def land_cover_preview(asset_id: uuid.UUID) -> Response:
+    asset = _igbp_asset_or_error(asset_id)
+    cache_key = _analysis_cache_key([str(asset['sha256'])], 'igbp-preview', {'profile': MCD12Q1_LC_TYPE1_PROFILE})
+    target = _storage_path(str(Path('preview-cache') / 'igbp' / f'{cache_key}.png'))
+    if not target.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(categorical_png(_storage_path(asset['storage_key'])))
+        _catalog_or_error().put_persistent_cache(cache_key, 'geospatial:igbp-preview', {
+            'asset_id': str(asset['asset_id']), 'image_url': f'/api/geospatial/assets/{asset_id}/land-cover/preview',
+        })
+    return Response(target.read_bytes(), media_type='image/png', headers={
+        'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff',
+    })
 
 
 @router.post('/assets/{asset_id}/renders/rgb')

@@ -16,10 +16,13 @@ $ErrorActionPreference = 'Stop'
 $DatabaseName = 'geoportal_db'
 $AppUser = 'geoportal_app'
 $Psql = Join-Path $PostgresBin 'psql.exe'
-$Migration = Join-Path $PSScriptRoot '001_geoportal_catalog.sql'
+$Migrations = @(
+    (Join-Path $PSScriptRoot '001_geoportal_catalog.sql'),
+    (Join-Path $PSScriptRoot '002_ecuador_administrative_areas.sql')
+)
 
 if (-not (Test-Path -LiteralPath $Psql)) { throw "No se encontró psql.exe en $PostgresBin" }
-if (-not (Test-Path -LiteralPath $Migration)) { throw 'No se encontró la migración del catálogo.' }
+if ($Migrations | Where-Object { -not (Test-Path -LiteralPath $_) }) { throw 'No se encontraron las migraciones del catálogo.' }
 if ($DatabaseName -notmatch '^[a-z][a-z0-9_]*$' -or $AppUser -notmatch '^[a-z][a-z0-9_]*$') {
     throw 'Los identificadores internos no son seguros.'
 }
@@ -66,7 +69,7 @@ try {
     Invoke-PsqlInput 'postgres' $AdminUser $AdminPassword "CREATE ROLE $AppUser LOGIN PASSWORD '$escapedPassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;"
     Invoke-Psql 'postgres' $AdminUser $AdminPassword @('-c', "CREATE DATABASE $DatabaseName WITH OWNER $AppUser TEMPLATE template0 ENCODING 'UTF8';")
     Invoke-Psql $DatabaseName $AdminUser $AdminPassword @('-c', 'CREATE EXTENSION postgis;')
-    Invoke-Psql $DatabaseName $AppUser $AppPassword @('-f', $Migration)
+    foreach ($Migration in $Migrations) { Invoke-Psql $DatabaseName $AppUser $AppPassword @('-f', $Migration) }
     Write-Output 'geoportal_db quedó creada con PostGIS y su catálogo. Ninguna otra base fue modificada.'
     Write-Output 'Configura GEOPORTAL_DATABASE_URL y un directorio privado antes de iniciar la API.'
 }

@@ -1,8 +1,7 @@
 # AndesSAR Earth Trends — MVP local para Windows
 
-Aplicación local para explorar tendencias ambientales puntuales con datos reales de NASA POWER. Está orientada al reto **“Be An Earth System Trend Detective!”** de NASA Space Apps Challenge 2026, sin afirmar afiliación ni aval de NASA.
+Aplicación local para explorar tendencias ambientales puntuales con datos reales de NASA POWER. Está orientada al reto **“Be An Earth System Trend Detective!”** de NASA Space Apps Challenge 2026.
 
-El módulo **SAR experimental** original se conserva en una pestaña independiente. Sus tres GeoTIFF incluidos son sintéticos; no son observaciones NISAR ni clasifican cobertura.
 
 ## Qué funciona
 
@@ -13,82 +12,7 @@ El módulo **SAR experimental** original se conserva en una pestaña independien
 - Exportación JSON/CSV de resultados calculados, metadatos de fuente, unidades, calidad y limitaciones.
 - Leaflet con mapas base, punto, rectángulo y polígono. NASA POWER permanece identificado como análisis de punto; no se dibuja una superficie de tendencia ficticia ni se usa el centroide de un polígono como si fuese su promedio.
 - Comparador SAR local existente en `/api/analyze`, limitado a la demo de Riobamba.
-- Pestaña **Geoportal**: catálogo PostGIS opcional, carga GeoTIFF por bloques, validación de metadatos reales, SHA-256 y vista técnica cacheada. Permanece explícitamente desactivada hasta configurar la base y las credenciales locales.
 
 ## Inicio rápido en Windows
 
 Requisitos: Python 3.12 y Node.js reciente (Vite 7 requiere Node 20.19+ o 22.12+).
-
-1. Ejecuta `instalar_windows.bat` una sola vez.
-2. En una ventana, ejecuta `iniciar_backend.bat`.
-3. En otra, ejecuta `iniciar_frontend.bat`.
-4. Abre [http://127.0.0.1:5173](http://127.0.0.1:5173).
-
-El backend queda en [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs). Vite reenvía `/api` a ese puerto.
-
-### Alternativa por consola
-
-```bat
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-cd frontend
-npm install
-```
-
-En la raíz:
-
-```bat
-.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8080
-```
-
-En `frontend`:
-
-```bat
-npm run dev
-```
-
-## Pruebas
-
-```bat
-.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest -q
-cd frontend
-npm run build
-```
-
-## Rutas principales
-
-- `GET /api/health`, `GET /api/countries`, `GET /api/regions`, `GET /api/variables`, `GET /api/providers`, `GET /api/data-availability`
-- `POST /api/timeseries`, `POST /api/trends`, `POST /api/anomalies`, `POST /api/compare`
-- `GET /api/exports/{id}?format=json|csv`
-- `GET /api/scenes`, `POST /api/analyze` (SAR experimental heredado)
-- `GET /api/tif-lab/catalog`, `GET /api/tif-lab/inspect/{id}`, `POST /api/tif-lab/compare` (laboratorio local de los MCD12Q1)
-- `GET /api/geospatial/status`, `GET /api/geospatial/assets`, `POST /api/geospatial/asset-groups`, `POST /api/geospatial/uploads/sessions` (geoportal persistente; requiere configuración local)
-
-## Integridad científica y límites
-
-- NASA POWER mensual entrega una serie puntual; no equivale a un promedio de país, ciudad, rectángulo o polígono.
-- Para `T2M`, se ajusta OLS sobre medias anuales con al menos nueve meses válidos. Para precipitación mensual expresada en `mm/día`, cada valor se convierte usando los días reales del mes y se suman solamente años completos.
-- El valor p e IC 95 % dependen de supuestos OLS. La agregación anual reduce, pero no elimina, estacionalidad y autocorrelación. Una diferencia interanual no es una tendencia significativa y una tendencia no prueba causalidad.
-- La disponibilidad efectiva de variables, períodos y coordenadas se toma de la respuesta real del proveedor; no se inventan fechas ni mediciones.
-- La limpieza de `PROJ_DATA`/`PROJ_LIB` se hace solo dentro del proceso FastAPI antes de importar Rasterio. No se modifica Windows ni PostgreSQL/PostGIS.
-
-## Documentación de proyecto
-
-- [Diagnóstico](docs/diagnostico.md)
-- [Matriz de requisitos](docs/matriz_requisitos.md)
-- [Arquitectura](docs/arquitectura.md)
-- [Plan de implementación](docs/plan_implementacion.md)
-- [Especificación](docs/especificacion.md)
-- [Estrategia de datos espaciales](docs/estrategia_datos_espaciales.md)
-- [Integración PostgreSQL/PostGIS](docs/integracion_postgis.md)
-
-Los requisitos PDF entregados fuera del repositorio ya están trazados en la especificación. La estrategia de datos espaciales documenta el trabajo pendiente antes de habilitar clasificaciones o animaciones geográficas.
-
-### Laboratorio GeoTIFF local
-
-Para probar los archivos entregados en `Ecu Cp`, `Ecu Cp 2021_2023`, `Ecu Cp 2023_2026` y `02_2021`, inicia backend y frontend como se indica arriba y abre directamente [http://127.0.0.1:5173/laboratorio-tif](http://127.0.0.1:5173/laboratorio-tif). La ruta no aparece en la navegación principal. El selector «Carpeta local» abre por defecto `Ecu Cp`. Las series de códigos permiten inspección y comparación de grilla compatibles. `02_2021` se muestra únicamente como ráster técnico: sus bandas, sensor y máscara están **NO VERIFICADOS**, por lo que no se crean composiciones RGB, índices ni clases de cobertura.
-
-### Activar Geoportal PostGIS
-
-No reutilices las bases de ejemplo. Sigue la guía [Integración PostgreSQL/PostGIS](docs/integracion_postgis.md): aprovisiona la base aislada mediante `db\setup_geoportal.ps1`, define las variables privadas en `.env`, reinicia FastAPI y comprueba `GET /api/geospatial/status`. La pestaña «Geoportal» de la aplicación principal permitirá entonces registrar nuevos GeoTIFF con deduplicación y caché persistente.

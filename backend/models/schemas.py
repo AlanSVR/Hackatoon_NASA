@@ -4,12 +4,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from backend.core.catalog import LATEST_POWER_YEAR
+from backend.core.catalog import EARTH_TRENDS_MAX_YEAR, EARTH_TRENDS_MIN_YEAR
 
 
 class PointRequest(BaseModel):
     country_id: str = Field(default='ecuador', min_length=2, max_length=64)
-    region_id: str | None = Field(default='riobamba_chimborazo', max_length=128)
+    region_id: str | None = Field(default=None, max_length=128)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
 
@@ -18,15 +18,15 @@ class PointRequest(BaseModel):
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError('latitude y longitude deben enviarse juntas.')
         if self.latitude is None and not self.region_id:
-            raise ValueError('Indica region_id o un par latitude/longitude.')
+            raise ValueError('Selecciona un punto en el mapa antes de consultar.')
         return self
 
 
 class TimeSeriesRequest(PointRequest):
     provider_id: Literal['nasa_power'] = 'nasa_power'
     variable_id: str = Field(default='t2m', min_length=2, max_length=64)
-    start_year: int = Field(default=2001, ge=1981, le=LATEST_POWER_YEAR)
-    end_year: int = Field(default=LATEST_POWER_YEAR, ge=1981, le=LATEST_POWER_YEAR)
+    start_year: int = Field(default=EARTH_TRENDS_MIN_YEAR, ge=EARTH_TRENDS_MIN_YEAR, le=EARTH_TRENDS_MAX_YEAR)
+    end_year: int = Field(default=EARTH_TRENDS_MAX_YEAR, ge=EARTH_TRENDS_MIN_YEAR, le=EARTH_TRENDS_MAX_YEAR)
     frequency: Literal['monthly'] = 'monthly'
 
     @model_validator(mode='after')
@@ -37,8 +37,8 @@ class TimeSeriesRequest(PointRequest):
 
 
 class AnomalyRequest(TimeSeriesRequest):
-    baseline_start_year: int = Field(default=2001, ge=1981, le=LATEST_POWER_YEAR)
-    baseline_end_year: int = Field(default=2020, ge=1981, le=LATEST_POWER_YEAR)
+    baseline_start_year: int = Field(default=2021, ge=EARTH_TRENDS_MIN_YEAR, le=EARTH_TRENDS_MAX_YEAR)
+    baseline_end_year: int = Field(default=2023, ge=EARTH_TRENDS_MIN_YEAR, le=EARTH_TRENDS_MAX_YEAR)
 
     @model_validator(mode='after')
     def valid_baseline(self):
@@ -50,8 +50,8 @@ class AnomalyRequest(TimeSeriesRequest):
 
 
 class CompareRequest(TimeSeriesRequest):
-    year_a: int = Field(default=2020, ge=1981, le=LATEST_POWER_YEAR)
-    year_b: int = Field(default=2025, ge=1981, le=LATEST_POWER_YEAR)
+    year_a: int = Field(default=2021, ge=EARTH_TRENDS_MIN_YEAR, le=EARTH_TRENDS_MAX_YEAR)
+    year_b: int = Field(default=2025, ge=EARTH_TRENDS_MIN_YEAR, le=EARTH_TRENDS_MAX_YEAR)
 
     @model_validator(mode='after')
     def valid_comparison_years(self):

@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,15 +23,13 @@ def _bool(value: str | None, default: bool = False) -> bool:
 def _local_postgres_url() -> str | None:
     """Use the already configured local pgpass without copying a secret.
 
-    The administrator login is used only to establish the local connection and
-    PostgreSQL applies ``geoportal_app`` as the startup role before the API can
-    execute queries.  This is a Windows-local fallback for the starter project;
-    deployments should set GEOPORTAL_DATABASE_URL to their managed app account.
+    ``geoportal_app`` is a dedicated non-superuser account. Its password is
+    intentionally absent from the project and is resolved by libpq from the
+    user's local pgpass.conf only.
     """
     if os.name != 'nt' or not _bool(os.environ.get('GEOPORTAL_USE_LOCAL_PGPASS'), default=True):
         return None
-    options = quote('-c role=geoportal_app', safe='')
-    return f'postgresql://postgres@localhost:5432/geoportal_db?options={options}'
+    return 'postgresql://geoportal_app@localhost:5432/geoportal_db'
 
 
 @dataclass(frozen=True)

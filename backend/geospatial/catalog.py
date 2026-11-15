@@ -51,6 +51,99 @@ class PostgresCatalog:
             'asset_count': int(count['value']),
         }
 
+    def upsert_administrative_areas(self, collection: dict[str, Any]) -> None:
+        """Persist reviewed administrative polygons used for zonal selection."""
+        metadata = collection.get('metadata') or {}
+        source_title = str(metadata.get('source_title') or 'Fuente no declarada')
+        source_url = str(metadata.get('source_url') or '')
+        if not source_url:
+            raise ValueError('La colección de áreas no declara la fuente.')
+        rows = []
+        for feature in collection.get('features') or []:
+            properties = feature.get('properties') or {}
+            geometry = feature.get('geometry')
+            if not geometry:
+                continue
+            rows.append({
+                'area_id': str(properties['area_id']),
+                'level': str(properties.get('level') or 'province'),
+                'name_es': str(properties['name_es']),
+                'name_en': str(properties.get('name_en') or properties['name_es']),
+                'source_year': str(properties.get('source_year') or ''),
+                'source_title': source_title,
+                'source_url': source_url,
+                'geometry': json.dumps(geometry),
+            })
+        if not rows:
+            raise ValueError('La colección no contiene áreas importables.')
+        with self.connection() as connection:
+            connection.cursor().executemany(
+                """
+                INSERT INTO geoportal.administrative_areas
+                    (area_id, level, name_es, name_en, source_year, source_title, source_url, boundary)
+                VALUES
+                    (%(area_id)s, %(level)s, %(name_es)s, %(name_en)s, %(source_year)s,
+                     %(source_title)s, %(source_url)s,
+                     ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(%(geometry)s), 4326)))
+                ON CONFLICT (area_id) DO UPDATE SET
+                    level = EXCLUDED.level, name_es = EXCLUDED.name_es, name_en = EXCLUDED.name_en,
+                    source_year = EXCLUDED.source_year, source_title = EXCLUDED.source_title,
+                    source_url = EXCLUDED.source_url, boundary = EXCLUDED.boundary, updated_at = now()
+                """,
+                rows,
+            )
+
+    def list_administrative_areas(self, level: str = 'province') -> dict[str, Any]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT area_id, level, name_es, name_en, source_year, source_title, source_url,
+                       ST_AsGeoJSON(boundary)::jsonb AS geometry
+                FROM geoportal.administrative_areas
+                WHERE level = %s
+                ORDER BY name_es
+                """,
+                (level,),
+            ).fetchall()
+        features = [
+            {
+                'type': 'Feature', 'id': row['area_id'],
+                'properties': {
+                    'area_id': row['area_id'], 'level': row['level'],
+                    'name_es': row['name_es'], 'name_en': row['name_en'],
+                    'source_year': row['source_year'],
+                },
+                'geometry': row['geometry'],
+            }
+            for row in rows
+        ]
+        source = dict(rows[0]) if rows else {}
+        return {
+            'type': 'FeatureCollection', 'features': features,
+            'metadata': {
+                'source_title': source.get('source_title'), 'source_url': source.get('source_url'),
+                'count': len(features), 'crs': 'EPSG:4326',
+            },
+        }
+
+    def administrative_geometries(self, area_ids: list[str], level: str = 'province') -> list[dict[str, Any]]:
+        if not area_ids:
+            return []
+        unique_ids = list(dict.fromkeys(area_ids))
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT area_id, name_es, name_en, ST_AsGeoJSON(boundary)::jsonb AS geometry
+                FROM geoportal.administrative_areas
+                WHERE level = %s AND area_id = ANY(%s)
+                ORDER BY name_es
+                """,
+                (level, unique_ids),
+            ).fetchall()
+        if len(rows) != len(unique_ids):
+            raise ValueError('Una o más provincias seleccionadas no existen en el catálogo.')
+        return [dict(row) for row in rows]
+
     def list_assets(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.connection() as connection:
             rows = connection.execute(
@@ -80,6 +173,21 @@ class PostgresCatalog:
                 FROM geoportal.raster_assets WHERE asset_id = %s
                 """,
                 (str(asset_id),),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_declared_metadata(self, asset_id: str | UUID, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        """Merge human-authored catalog notes without touching technical facts."""
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                UPDATE geoportal.raster_assets
+                SET declared_metadata = COALESCE(declared_metadata, '{}'::jsonb) || %s::jsonb,
+                    last_seen_at = now()
+                WHERE asset_id = %s
+                RETURNING asset_id::text, original_name, declared_metadata
+                """,
+                (json.dumps(metadata), str(asset_id)),
             ).fetchone()
         return dict(row) if row else None
 
