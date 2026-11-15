@@ -67,5 +67,12 @@ function App() {
   </>
 }
 
+function TifLabPage() {
+  const [backendOk, setBackendOk] = useState(false)
+  const [about, setAbout] = useState(false)
+  useEffect(() => { api.get('/health').then(health => setBackendOk(Boolean(health.ok))).catch(() => setBackendOk(false)) }, [])
+  return <><AppHeader view="geoportal" backendOk={backendOk} onAbout={() => setAbout(true)} onViewChange={() => { window.location.assign('/') }}/><TifLab/>{about && <AboutModal onClose={() => setAbout(false)}/>}</>
+}
+
 const isTifLab = /^\/laboratorio-tif\/?$/.test(window.location.pathname)
-createRoot(document.getElementById('root')).render(<I18nProvider>{isTifLab ? <TifLab/> : <App />}</I18nProvider>)
+createRoot(document.getElementById('root')).render(<I18nProvider>{isTifLab ? <TifLabPage/> : <App />}</I18nProvider>)
