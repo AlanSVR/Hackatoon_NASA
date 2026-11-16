@@ -1,86 +1,84 @@
-# Despliegue en Supabase y Render
+# Despliegue gratuito en Supabase y Render
 
-La aplicación se publica como **un único servicio Docker de Render**: FastAPI
-entrega la API y la interfaz React compilada. La base se mantiene en
-PostgreSQL/PostGIS de Supabase; los GeoTIFF originales no se guardan dentro de
-la base.
+La aplicación se despliega en **un solo Web Service nativo de Python de
+Render**, plan `free`. No usa Docker, imagen de contenedor ni disco de pago.
+Durante la compilación, Render instala las dependencias Python, compila React y
+FastAPI entrega tanto la API como la interfaz web.
 
-## Contenido que se publica
+## Qué se publica
 
-- Código, Dockerfile, `render.yaml` y migraciones SQL.
-- `data/seed/geoportal/`: cinco capas IGBP de Ecuador 2021–2025 (31 MiB). El
-  backend las restaura de forma privada al iniciar, por lo que Geoportal y
-  Comparar funcionan incluso después de que el disco efímero de Render se
-  reinicie.
-- Nunca se publica `.env`, `runtime/`, videos de trabajo ni los dos TIFF
-  locales grandes: `02_2021.0.tif` (493 MiB) y `Zona Norte 2021.tiff` (246
-  MiB).
+- Código, `render.yaml`, migraciones SQL y las cinco capas IGBP Ecuador
+  2021–2025 de `data/seed/geoportal/` (31 MiB).
+- En cada inicio, esas cinco capas se copian a la zona privada efímera y hacen
+  funcionales Geoportal y Comparar: provincias, métricas, previsualizaciones y
+  comparación temporal.
+- No se publican `.env`, `runtime/`, videos ni los originales locales grandes:
+  `02_2021.0.tif` (493 MiB) y `Zona Norte 2021.tiff` (246 MiB).
 
-Los cinco archivos semilla son suficientes para las métricas zonales,
-selección de provincias, previsualizaciones y comparación 2021–2025 que se
-muestran en la aplicación. La base conserva además el catálogo local completo
-(7 activos, bandas, 24 provincias, caché y trabajos); los dos activos grandes
-quedarán sin bytes en el entorno gratuito hasta moverlos a almacenamiento de
-objetos.
+## Terminar la importación en el SQL Editor de Supabase
 
-## Migrar la base local a Supabase
+El esquema y PostGIS ya se pueden crear con
+[`db/010_supabase_geoportal_schema.sql`](../db/010_supabase_geoportal_schema.sql).
+El SQL Editor no acepta el histórico completo de 1.2 MB, por lo que importa
+estos tres archivos en este orden:
 
-En el SQL Editor del proyecto Supabase, con el rol administrador del proyecto:
+1. [`011a_administrative_areas.sql`](../db/supabase_sql_editor/011a_administrative_areas.sql)
+2. [`011b_catalog_and_cache.sql`](../db/supabase_sql_editor/011b_catalog_and_cache.sql)
+3. [`011c_job_history.sql`](../db/supabase_sql_editor/011c_job_history.sql)
 
-1. Ejecutar [`db/010_supabase_geoportal_schema.sql`](../db/010_supabase_geoportal_schema.sql).
-   Crea únicamente el esquema `geoportal` y PostGIS en `extensions`.
-2. Ejecutar [`db/011_supabase_geoportal_data.sql`](../db/011_supabase_geoportal_data.sql).
-   Importa los datos reales del catálogo local exportados el 15 de noviembre
-   de 2026: 24 provincias, 7 activos, 17 bandas, 64 entradas de caché, 62
-   trabajos y 8 sesiones de carga. No contiene contraseñas ni bytes ráster.
-3. La última consulta del archivo 010 muestra la versión de PostGIS. Tras el
-   archivo 011, comprueba en el editor:
+Cada uno queda por debajo de 690 KB. Juntos restauran 24 provincias, 7 activos,
+17 bandas, 64 entradas de caché, 62 trabajos y 8 sesiones. Comprueba después:
 
-   ```sql
-   SELECT
-     (SELECT count(*) FROM geoportal.raster_assets) AS assets,
-     (SELECT count(*) FROM geoportal.administrative_areas) AS provinces;
+```sql
+SELECT
+  (SELECT count(*) FROM geoportal.raster_assets) AS assets,
+  (SELECT count(*) FROM geoportal.administrative_areas) AS provinces,
+  (SELECT count(*) FROM geoportal.raster_bands) AS bands;
+```
+
+El archivo histórico `db/011_supabase_geoportal_data.sql` se conserva solo
+para restaurar mediante conexión directa con `psql`; no se pega completo en el
+SQL Editor.
+
+## Configurar Render sin Docker
+
+1. En Render, crea un **Web Service** desde el repositorio y selecciona la
+   rama `main`. Detectará [`render.yaml`](../render.yaml).
+2. Verifica estos valores nativos:
+
+   ```text
+   Runtime: Python
+   Plan: Free
+   Build: pip install -r requirements.txt && cd frontend && npm ci && npm run build
+   Start: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+   Health check: /api/health
    ```
 
-El archivo 011 está diseñado para una base `geoportal` nueva. No se debe
-ejecutar por segunda vez sobre tablas con datos, porque preserva las claves y
-no sobrescribe registros existentes.
+3. En *Environment*, crea el secreto `GEOPORTAL_DATABASE_URL` usando la URI
+   de conexión de Supabase con `sslmode=require`. Usa el formato de
+   [`.env.example`](../.env.example), sustituyendo solo los marcadores por los
+   valores reales del proyecto. No subas ni pegues la clave en Git.
+4. Mantén `GEOPORTAL_STORAGE_DIR=/tmp/geoportal` y
+   `GEOPORTAL_ALLOW_LOCAL_UPLOADS=false`, como ya declara `render.yaml`.
+5. Despliega. La aplicación abrirá en la URL `onrender.com` del mismo servicio;
+   prueba primero `/api/health` y después la página raíz.
 
-## Configuración de Render
+## TIFF pesados: solución gratuita aplicada
 
-1. Crea un **Web Service** desde este repositorio. Render detecta
-   [`render.yaml`](../render.yaml) y construye [`Dockerfile`](../Dockerfile).
-2. En *Environment*, crea el secreto `GEOPORTAL_DATABASE_URL` con la cadena
-   URI de conexión de Supabase. Debe usar TLS, por ejemplo el formato de
-   [`.env.example`](../.env.example), sustituyendo el marcador por la
-   contraseña real y el `PROJECT_REF`. No se pega esa cadena en Git ni en
-   archivos versionados.
-3. Conserva los valores definidos en `render.yaml`:
-   `GEOPORTAL_STORAGE_DIR=/tmp/geoportal` y
-   `GEOPORTAL_ALLOW_LOCAL_UPLOADS=false`.
-4. Despliega y visita `https://TU-SERVICIO.onrender.com/api/health`. La página
-   principal se abre en la misma URL, sin configurar una URL de API separada.
+Render Free pierde los archivos locales en reinicios, pero el proyecto repone
+automáticamente las cinco capas pequeñas desde Git. Esto no genera un cargo
+adicional y evita subir los originales de 246/493 MiB.
 
-`/tmp/geoportal` es deliberadamente efímero: al arrancar se restauran los
-cinco rásteres publicados y el resto de los resultados se vuelve a calcular o
-se recupera del catálogo. Las cargas nuevas están desactivadas en ese perfil
-para evitar aceptar archivos que desaparecerían después de un reinicio.
+Supabase Storage gratuito permite 1 GB total, pero limita cada archivo a 50
+MB; por eso no puede alojar esos dos TIFF. Mientras se use el plan gratuito,
+las cargas nuevas se mantienen desactivadas en Render: no se aceptan archivos
+que se perderían tras un reinicio. Para cargas permanentes o para publicar los
+dos originales grandes habrá que integrar un almacenamiento de objetos con
+archivos grandes; no se deben subir a GitHub.
 
-## Rásteres grandes y futuras cargas
+## Credenciales
 
-El plan gratuito de Supabase Storage admite 1 GB total pero limita cada subida
-a 50 MB. Por ello no sirve para los TIFF locales de 246/493 MiB. Para publicar
-también esos originales o admitir cargas permanentes se necesita almacenamiento
-de objetos con archivos grandes, por ejemplo Cloudflare R2 o un plan de pago
-de Supabase/Render. En ese momento hay que configurar sus credenciales como
-secretos de Render y cambiar el adaptador de almacenamiento; no se deben copiar
-los originales grandes a GitHub.
-
-## Control de secretos
-
-- `.env` está ignorado por Git y no se ha añadido al índice.
-- El proyecto incluye solamente `.env.example`, que contiene marcadores sin
-  credenciales.
-- `GEOPORTAL_DATABASE_URL` se define manualmente como secreto de Render. La
-  configuración local actual apunta a PostgreSQL local; no incluye una cadena
-  de conexión de Supabase utilizable.
+`.env` está correctamente ignorado. La configuración local actualmente apunta
+a PostgreSQL en `localhost`; Render no puede usar esa dirección. La URI real de
+Supabase se configura como secreto de Render, no sustituyendo ni versionando la
+configuración local.
