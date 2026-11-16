@@ -1,18 +1,36 @@
-# AndesSAR Earth Trends — MVP local para Windows
+# AndesSAR — Geoportal local para Ecuador
 
-Aplicación local para explorar tendencias ambientales puntuales con datos reales de NASA POWER. Está orientada al reto **“Be An Earth System Trend Detective!”** de NASA Space Apps Challenge 2026.
+Aplicación local para explorar mapas de cobertura terrestre de Ecuador,
+catalogados en PostgreSQL/PostGIS. La interfaz abre directamente el Geoportal;
+la navegación incluye **Geoportal** y **Comparar**.
 
+## Funciones disponibles
 
-## Qué funciona
+- Catálogo persistente de GeoTIFF con archivos originales privados.
+- Visualización de clasificaciones IGBP, metadatos y sistema de referencia de
+  coordenadas (SRC/CRS).
+- Selección de una provincia o de varias provincias mediante los límites
+  administrativos persistidos de Ecuador.
+- Métricas zonales de píxeles válidos, área estimada, agua clasificada y
+  distribución de clases.
+- Mapa base OpenStreetMap predeterminado, con alternativas satélite,
+  topográfica, clara y oscura.
+- Comparación de dos mapas, transición reproducible y resumen de cambios.
+- Concordancia de los dos mapas mediante acuerdo observado, Kappa y margen de
+  acuerdo; se calcula para cada comparación válida.
+- Español/Inglés con preferencia guardada; inglés es el idioma inicial en una
+  instalación nueva.
 
-- Selector de Ecuador, Estados Unidos y Canadá; con Riobamba/Quito, Denver/Phoenix y Calgary/Vancouver.
-- Serie mensual de punto mediante NASA POWER, consultada desde FastAPI, con caché temporal local, timeout y mensajes de error claros.
-- Temperatura media a 2 m (`T2M`) y precipitación corregida (`PRECTOTCORR`). `IMERG_PRECTOT` se consulta solo bajo disponibilidad real: los valores faltantes del proveedor se muestran como faltantes, sin sustitución.
-- Tendencia OLS sobre agregados anuales, pendiente, valor p, intervalo de confianza 95 %, anomalías mensuales y comparador anual.
-- Exportación JSON/CSV de resultados calculados, metadatos de fuente, unidades, calidad y limitaciones.
-- Leaflet con mapas base, punto, rectángulo y polígono. NASA POWER permanece identificado como análisis de punto; no se dibuja una superficie de tendencia ficticia ni se usa el centroide de un polígono como si fuese su promedio.
-- Comparador SAR local existente en `/api/analyze`, limitado a la demo de Riobamba.
+## Inicio local en Windows
 
-## Inicio rápido en Windows
+Requisitos: Python 3.12, PostgreSQL con PostGIS y Node.js reciente (Vite 7
+requiere Node 20.19+ o 22.12+).
 
-Requisitos: Python 3.12 y Node.js reciente (Vite 7 requiere Node 20.19+ o 22.12+).
+1. Configura las credenciales locales solamente en `.env`.
+2. Ejecuta `iniciar_backend.bat`.
+3. Ejecuta `iniciar_frontend.bat`.
+4. Abre `http://127.0.0.1:5173/`.
+
+Los GeoTIFF locales y las credenciales no deben añadirse al repositorio. La
+preparación para Render y Supabase está en
+[`docs/despliegue_render_supabase.md`](docs/despliegue_render_supabase.md).

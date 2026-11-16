@@ -1,0 +1,12 @@
+services:
+  - type: web
+    runtime: docker
+    name: andessar-earth-trends
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEOPORTAL_DATABASE_URL
+        sync: false
+      - key: GEOPORTAL_STORAGE_DIR
+        value: /tmp/geoportal
+      - key: GEOPORTAL_ALLOW_LOCAL_UPLOADS
+        value: "false"

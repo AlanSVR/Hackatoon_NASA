@@ -6,4 +6,4 @@ export const BASE_MAPS = {
   light: { id: 'light', labelKey: 'maps.light', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', attribution: 'Tiles &copy; Esri — Esri, DeLorme, NAVTEQ', crs: 'EPSG:3857' },
 }
 
-export const INITIAL_FILTERS = { country_id: 'ecuador', region_id: '', variable_id: 't2m', start_year: 2021, end_year: 2026, year_a: 2021, year_b: 2025, base_map: 'dark', selection_mode: 'point' }
+export const INITIAL_FILTERS = { country_id: 'ecuador', region_id: '', variable_id: 't2m', start_year: 2021, end_year: 2026, year_a: 2021, year_b: 2025, base_map: 'osm', selection_mode: 'point' }

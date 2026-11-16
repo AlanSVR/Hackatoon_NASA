@@ -1,0 +1,20 @@
+.git
+.env
+.venv
+__pycache__
+frontend/node_modules
+frontend/dist
+runtime
+tmp
+promo-app.mp4
+promo-app-premium
+promo-app-premium.mp4
+promo-app-premium.srt
+tools
+data/raw
+02_2021
+03_2022
+03_2023
+Ecu Cp
+Ecu Cp 2021_2023
+Ecu Cp 2023_2026

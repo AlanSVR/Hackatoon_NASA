@@ -34,6 +34,10 @@ class PostgresCatalog:
             raise CatalogUnavailable('Falta psycopg. Instala requirements.txt antes de activar el catálogo.') from exc
         try:
             with psycopg.connect(self.settings.database_url, row_factory=dict_row, connect_timeout=5) as connection:
+                # Supabase keeps PostGIS in ``extensions``.  Local PostgreSQL
+                # installations commonly use ``public``; retaining both keeps
+                # the same queries portable without exposing extension objects.
+                connection.execute('SET search_path TO geoportal, public, extensions')
                 yield connection
         except Exception as exc:  # psycopg expone varias clases de error según el servidor.
             raise CatalogUnavailable('No se pudo conectar al catálogo PostgreSQL/PostGIS.') from exc
@@ -148,7 +152,7 @@ class PostgresCatalog:
         with self.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT asset_id::text, original_name, asset_kind, sha256, byte_size,
+                SELECT asset_id::text, original_name, asset_kind, sha256, byte_size, storage_key,
                        crs_text, epsg, width, height, band_count, nodata, resolution_x,
                        resolution_y, captured_at, declared_metadata, technical_metadata,
                        created_at, source_asset_id::text

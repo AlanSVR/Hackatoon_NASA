@@ -185,7 +185,9 @@ def _session_directory(session_id: str) -> Path:
 
 def _storage_path(storage_key: str) -> Path:
     root = settings.storage_dir.resolve()
-    candidate = (root / storage_key).resolve()
+    # Older Windows catalog rows used backslashes.  Persisted keys are logical
+    # POSIX paths, so normalize them before resolving on Linux/Render as well.
+    candidate = (root / Path(storage_key.replace('\\', '/'))).resolve()
     try:
         candidate.relative_to(root)
     except ValueError as exc:
@@ -352,7 +354,7 @@ def _cached_render(asset: dict[str, Any], operation: str, parameters: dict[str, 
     repository = _catalog_or_error()
     cache_key = _analysis_cache_key([str(asset['sha256'])], operation, parameters)
     cached = repository.get_persistent_cache(cache_key)
-    storage_key = str(Path('derived-cache') / cache_key[:2] / f'{cache_key}.png')
+    storage_key = (Path('derived-cache') / cache_key[:2] / f'{cache_key}.png').as_posix()
     target = _storage_path(storage_key)
     if cached and target.is_file():
         return {**dict(cached['payload']), 'cache_key': cache_key, 'cached': True}
@@ -458,7 +460,15 @@ def list_assets(limit: int = 100) -> dict[str, Any]:
     if not 1 <= limit <= 250:
         raise HTTPException(422, 'limit debe estar entre 1 y 250.')
     try:
-        return {'items': _catalog_or_error().list_assets(limit)}
+        # The catalog may retain metadata for archival originals that are not
+        # deployed to the current private object store.  Do not offer a layer
+        # which would immediately fail to render.
+        available: list[dict[str, Any]] = []
+        for item in _catalog_or_error().list_assets(250):
+            storage_key = str(item.pop('storage_key', ''))
+            if storage_key and _storage_path(storage_key).is_file():
+                available.append(item)
+        return {'items': available[:limit]}
     except CatalogUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
 
@@ -553,6 +563,9 @@ def land_cover_compare(asset_id: uuid.UUID, payload: LandCoverComparisonRequest)
     parameters = {
         'before_asset_id': str(before['asset_id']), 'after_asset_id': str(after['asset_id']),
         'bbox': payload.bbox, 'area_ids': payload.area_ids,
+        # Version the result contract so cached comparisons created before the
+        # agreement indicators cannot be returned without those indicators.
+        'calculation_version': 'map-agreement-v1',
     }
     cache_key = _analysis_cache_key([str(before['sha256']), str(after['sha256'])], 'igbp-compare', parameters)
     cached = repository.get_persistent_cache(cache_key)
@@ -815,7 +828,7 @@ def complete_upload(session_id: uuid.UUID, request: Request) -> dict[str, Any]:
             _validate_auxiliary_file(assembled, session, repository)
             values['technical_metadata'] = {'validation': 'XML auxiliar bien formado, sin DTD ni entidades.'}
 
-        storage_key = str(Path('assets') / digest[:2] / f'{digest}{extension}')
+        storage_key = (Path('assets') / digest[:2] / f'{digest}{extension}').as_posix()
         destination = _storage_path(storage_key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():

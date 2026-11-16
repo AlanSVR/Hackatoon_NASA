@@ -14,4 +14,19 @@ data/raw/
 03_2022/
 Ecu Cp/
 Ecu Cp 2023_2026/
-Ecu Cp 2021_2023/git add .
+Ecu Cp 2021_2023/
+# Local promotional render and its captured frames; keep them available locally
+# without accidentally committing video binaries to the source repository.
+promo-app.mp4
+tmp/promo_frames/
+tmp/geoportal_local_data.sql
+# Premium promo deliverables and temporary render material stay local. The
+# Remotion source project remains available for editing, except its dependency
+# folder which can always be restored from package-lock.json.
+promo-app-premium.mp4
+promo-app-premium.srt
+promo-app-premium/
+tmp/promo_premium/
+# Local video-production helpers are not part of the deployed application.
+tools/build_promo_video.py
+tools/capture_promo_screens.py
